@@ -9,9 +9,37 @@
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include <libnet.h>
 #include <sys/types.h>
-#include <regex.h>
+
+#include <iostream>
+#include <string>
+#include <fstream>
+#define MILLION 1000000
+
+using namespace std;
 
 static int NF = 1;
+static string myString[MILLION];
+
+
+int binary_search (string target){ //algorism
+    cout << "target is " << target << endl;
+    int first=0;
+    int last= 999999;
+    int middle;
+
+    while(1){
+        if(first >= last) return 1;
+        middle = first + ((last - first) / 2);
+        cout << myString[middle] << endl;
+        cout << "first is " << first << "middle is " << middle << "last is "<< last << endl;
+        if(myString[middle].compare(target)==0)
+            return 0;
+        else if(myString[middle].compare(target) >0)
+            last = middle - 1;
+        else
+            first = middle + 1 ;
+    }
+}
 
 void dump(unsigned char* buf, int size) {
     int i;
@@ -83,6 +111,9 @@ static uint32_t print_pkt (struct nfq_data *tb)
     if (ret >= 0){
         printf("payload_len=%d \n", ret);
         NF=1;
+        string target;
+        unsigned char buff[100]={0};
+        int i;
         //dump(data, ret);
         struct libnet_ipv4_hdr* ipp = (struct libnet_ipv4_hdr*)data;
         if( (ipp->ip_p) == IPPROTO_TCP ){
@@ -90,43 +121,27 @@ static uint32_t print_pkt (struct nfq_data *tb)
             int http_size = ntohs(ipp->ip_len) - (ipp->ip_hl<<2) - (tcpp->th_off<<2);
             if( http_size > 0 ){
                 char* httpp = (char*)tcpp + (tcpp->th_off<<2);
+                uint16_t count=(uint16_t)( ntohs(ipp->ip_len) - (ipp->ip_hl<<2) - (tcpp->th_off<<2) );
                 if( !strncmp(httpp,"GET ",4) ){
-                    for(int i=5;;i++){
+                    for(int i=5;i<count;i++){
                         if( *(httpp+i) == 0x48 && *(httpp+i+1) == 0x6f && *(httpp+i+2) == 0x73 && *(httpp+i+3) == 0x74
                                 && *(httpp+i+4) == 0x3a && *(httpp+i+5) == 0x20){
                             httpp= httpp+i+6;
                             break;// 'Host: ' finding..
                         }
                     }
+                    for(i=0;i<count ; i++){
+                        if( *(httpp+i)==0x0d && *(httpp+i+1)==0x0a ){
+                            break;
+                        }
+                        else{
+                            buff[i] = *(httpp+i);
+                            target += buff[i];
+                        }
+                    }
 
-                    FILE* fp;
-                    int i;
-                    char target[100]={0};
-                    char buff[100]={0};
-                    for(i=0;i<(int)sizeof(target);i++){
-                        if( !(*(httpp+i) == 0x0d) )
-                            target[i]= *(httpp+i);
-                        else {
-                            break;
-                        }
-                    }
-                    if( *httpp > 0x68 ){// middle of '0-9 a-z' is 0x68 'h'
-                        fp = fopen("/root/1m_detect/top-1m-reverse-sort.csv","r");
-                    }
-                    else{
-                        fp = fopen("/root/1m_detect/top-1m-sort.csv","r");
-                    }
-                    while(1){
-                        if(buff[0]==0x68)
-                            break;
-                        fgets(buff,sizeof(buff),fp);
-                        if( ! ( strncmp(target,buff,i) ) ){
-                            NF=0;
-                            break;
-                        }
-                        puts(buff);
-                    }
-                    fclose(fp);
+                    NF = binary_search(target);
+                    cout << "NF : " << NF << endl;
                 }
             }
         }
@@ -155,6 +170,16 @@ int main(int argc, char **argv)
     int rv;
     uint32_t queue = 0;
     char buf[4096] __attribute__ ((aligned));
+    int i=0;
+
+    ifstream myFile("/root/1m_detect/top-1m-sort.csv");
+    while( myFile.peek() != EOF ){
+        getline(myFile,myString[i]);
+        myString[i].capacity();
+        cout << myString[i] << endl;
+        i++;
+    }
+
 
     if (argc == 2) {
         queue = atoi(argv[1]);
